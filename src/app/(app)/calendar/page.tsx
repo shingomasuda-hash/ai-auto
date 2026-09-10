@@ -45,6 +45,8 @@ export default async function CalendarPage({
   for (let day = 1; day <= daysInMonth; day += 1) {
     cells.push({ key: `${monthKey}-${String(day).padStart(2, '0')}`, day });
   }
+  // 最終週の残りも1マスずつ埋めて、罫線がそろうようにする。
+  while (cells.length % 7 !== 0) cells.push({ key: null, day: null });
 
   const prev = shiftMonth(monthKey, -1);
   const next = shiftMonth(monthKey, 1);
