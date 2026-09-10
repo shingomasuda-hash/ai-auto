@@ -1,0 +1,21 @@
+{
+  "_note": "現行の販売案。価格の変更と公開は必ず管理者の手動操作で行う（自動化しない）。",
+  "products": [
+    {
+      "code": "starter",
+      "name": "Starter（3本）",
+      "priceYen": 1980,
+      "noteUrl": null,
+      "composition": ["意図整理", "デザイン具体化", "品質判断"],
+      "isPublished": false
+    },
+    {
+      "code": "bundle10",
+      "name": "全10本",
+      "priceYen": 9800,
+      "noteUrl": null,
+      "composition": ["Starterの3本を含む", "残り7本"],
+      "isPublished": false
+    }
+  ]
+}
