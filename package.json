@@ -19,7 +19,9 @@
     "seed": "node --experimental-strip-types scripts/seed.ts",
     "import:posts": "node --experimental-strip-types scripts/import-posts.ts",
     "worker": "node --experimental-strip-types scripts/worker.ts",
-    "admin:create": "node --experimental-strip-types scripts/create-admin.ts"
+    "admin:create": "node --experimental-strip-types scripts/create-admin.ts",
+    "account:connect": "node --experimental-strip-types scripts/connect-account.ts",
+    "worker:once": "node --experimental-strip-types scripts/worker.ts --once"
   },
   "dependencies": {
     "next": "^16.3.4",
