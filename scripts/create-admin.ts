@@ -2,10 +2,10 @@
  * 所有者アカウントを作成する。
  * 使い方: npm run admin:create -- <email> <displayName>
  * パスワードは標準入力から読む（引数に書かない）。
+ * 対話でもパイプでも動く。パイプの場合は2行（パスワード、確認）を渡す。
  */
-import { createInterface } from 'node:readline/promises';
-import { stdin, stdout } from 'node:process';
 import { createUser } from '../src/db/auth.ts';
+import { createPrompter } from '../src/lib/prompt.ts';
 import { closePool } from '../src/db/pool.ts';
 import { ensureEnvelopes } from '../src/db/budget.ts';
 import { jstMonthKey } from '../src/domain/time.ts';
@@ -18,10 +18,15 @@ async function main(): Promise<void> {
     return;
   }
 
-  const rl = createInterface({ input: stdin, output: stdout });
-  const password = await rl.question('パスワード(12文字以上): ');
-  const confirm = await rl.question('もう一度: ');
-  rl.close();
+  const prompter = await createPrompter();
+  let password: string;
+  let confirm: string;
+  try {
+    password = await prompter.ask('パスワード(12文字以上)');
+    confirm = await prompter.ask('もう一度');
+  } finally {
+    prompter.close();
+  }
 
   if (password !== confirm) {
     console.error('パスワードが一致しません。');

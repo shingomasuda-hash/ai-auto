@@ -11,12 +11,11 @@
  * live を指定した場合のみトークンを尋ねる。
  * simulated は外部へ一切送信しない（動作確認用）。
  */
-import { createInterface } from 'node:readline/promises';
-import { stdin, stdout } from 'node:process';
 import path from 'node:path';
 import { query, closePool } from '../src/db/pool.ts';
 import { encryptSecret } from '../src/lib/crypto.ts';
 import { recordAudit } from '../src/db/audit.ts';
+import { createPrompter } from '../src/lib/prompt.ts';
 
 const MODES = ['disconnected', 'simulated', 'live'] as const;
 
@@ -58,10 +57,15 @@ async function main(): Promise<void> {
       process.exitCode = 1;
       return;
     }
-    const rl = createInterface({ input: stdin, output: stdout });
-    const accessToken = (await rl.question('アクセストークン: ')).trim();
-    const refreshToken = (await rl.question('リフレッシュトークン(なければ空): ')).trim();
-    rl.close();
+    const prompter = await createPrompter();
+    let accessToken: string;
+    let refreshToken: string;
+    try {
+      accessToken = await prompter.ask('アクセストークン');
+      refreshToken = await prompter.ask('リフレッシュトークン(なければ空)');
+    } finally {
+      prompter.close();
+    }
     if (accessToken === '') {
       console.error('アクセストークンが空です。');
       process.exitCode = 1;
