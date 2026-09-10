@@ -11,6 +11,7 @@
 import path from 'node:path';
 import { closePool } from '../src/db/pool.ts';
 import { processOnePublishJob, processOneReconcileJob } from '../src/worker/publish.ts';
+import { processOneMetricsJob } from '../src/worker/metrics.ts';
 import { sweepExpiredClaims } from '../src/db/jobs.ts';
 import { expireOverdue } from '../src/db/posts.ts';
 import { purgeExpiredSessions } from '../src/db/auth.ts';
@@ -51,6 +52,14 @@ export async function tick(): Promise<boolean> {
     const result = await processOneReconcileJob({ workerId: WORKER_ID, signal: controller.signal });
     if (result.kind === 'idle') break;
     console.log(`reconcile: ${JSON.stringify(result)}`);
+    didWork = true;
+    if (controller.signal.aborted) break;
+  }
+
+  for (;;) {
+    const result = await processOneMetricsJob({ workerId: WORKER_ID });
+    if (result.kind === 'idle') break;
+    console.log(`metrics: ${JSON.stringify(result)}`);
     didWork = true;
     if (controller.signal.aborted) break;
   }
