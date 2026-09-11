@@ -8,7 +8,7 @@ import type { ScheduledLike } from '../../src/domain/policy.ts';
 
 const now = new Date('2026-04-01T00:00:00Z'); // JST 09:00
 
-test('運営上限は媒体ごとに1日3件', () => {
+test('運営上限は媒体ごとに24時間で3件', () => {
   const existing: ScheduledLike[] = [
     { id: 'a', platform: 'x', at: new Date('2026-04-01T01:00:00Z') },
     { id: 'b', platform: 'x', at: new Date('2026-04-01T04:00:00Z') },
@@ -21,15 +21,27 @@ test('運営上限は媒体ごとに1日3件', () => {
   assert.deepEqual(checkSchedule({ platform: 'threads', at: new Date('2026-04-01T10:00:00Z'), existing, now }), []);
 });
 
-test('JSTの日付が変わればカウントし直す', () => {
+test('上限は暦日ではなく移動窓で数える（日付またぎの抜け道を塞ぐ）', () => {
+  // JST 4/1 の 21:00 / 22:00 / 23:00 に3件（= UTC 12:00 / 13:00 / 14:00）
   const existing: ScheduledLike[] = [
-    { id: 'a', platform: 'x', at: new Date('2026-04-01T05:00:00Z') },
-    { id: 'b', platform: 'x', at: new Date('2026-04-01T08:00:00Z') },
-    { id: 'c', platform: 'x', at: new Date('2026-04-01T11:00:00Z') },
+    { id: 'a', platform: 'x', at: new Date('2026-04-01T12:00:00Z') },
+    { id: 'b', platform: 'x', at: new Date('2026-04-01T13:00:00Z') },
+    { id: 'c', platform: 'x', at: new Date('2026-04-01T14:00:00Z') },
   ];
-  // 2026-04-01T15:00Z は JST 2026-04-02 00:00
-  const violations = checkSchedule({ platform: 'x', at: new Date('2026-04-01T15:00:00Z'), existing, now });
-  assert.equal(violations.some((v) => v.code === 'daily_limit'), false);
+  // JST 4/2 の 00:30（= UTC 15:30）。暦日で数えると「翌日の1件目」として通ってしまう。
+  const acrossMidnight = checkSchedule({
+    platform: 'x', at: new Date('2026-04-01T15:30:00Z'), existing, now,
+  });
+  assert.equal(
+    acrossMidnight.some((v) => v.code === 'daily_limit'), true,
+    '日付をまたいでも直近24時間で数える',
+  );
+
+  // 24時間より前の実績は窓から外れる
+  const wellAfter = checkSchedule({
+    platform: 'x', at: new Date('2026-04-02T14:30:00Z'), existing, now,
+  });
+  assert.equal(wellAfter.some((v) => v.code === 'daily_limit'), false);
 });
 
 test('同一媒体は2時間以上あける', () => {
@@ -57,6 +69,51 @@ test('違反は最初の1件で打ち切らずすべて返す', () => {
   const violations = checkSchedule({ platform: 'x', at: new Date('2026-03-31T23:00:00Z'), existing, now });
   const codes = violations.map((v) => v.code).sort();
   assert.deepEqual(codes, ['daily_limit', 'in_past', 'min_interval']);
+});
+
+test('送信直前ゲート: 実績の件数でも上限を守る', () => {
+  const published = [
+    new Date('2026-03-31T02:00:00Z'),
+    new Date('2026-03-31T08:00:00Z'),
+    new Date('2026-03-31T14:00:00Z'),
+  ];
+  const blocked = evaluateSendGate({ ...baseGate, recentPublishedAt: published });
+  assert.equal(blocked.allowed, false);
+  assert.equal(blocked.allowed === false && blocked.code, 'rate_limited');
+  // 最も古い1件が窓から抜ける時刻を再試行時刻として返す
+  assert.equal(
+    blocked.allowed === false && blocked.retryAt?.toISOString(),
+    '2026-04-01T02:00:00.000Z',
+  );
+
+  // 1件が24時間より前なら通る
+  const ok = evaluateSendGate({
+    ...baseGate,
+    recentPublishedAt: [new Date('2026-03-30T23:00:00Z'), ...published.slice(1)],
+  });
+  assert.deepEqual(ok, { allowed: true });
+});
+
+test('送信直前ゲート: 直前の投稿から2時間あいていなければ送らない', () => {
+  const result = evaluateSendGate({
+    ...baseGate,
+    recentPublishedAt: [new Date('2026-03-31T23:00:00Z')],
+  });
+  assert.equal(result.allowed === false && result.code, 'min_interval');
+  assert.equal(
+    result.allowed === false && result.retryAt?.toISOString(),
+    '2026-04-01T01:00:00.000Z',
+  );
+});
+
+test('送信直前ゲート: 停止は上限より先に判定する', () => {
+  // 上限にかかっていても、止まっていることを先に伝える
+  const result = evaluateSendGate({
+    ...baseGate,
+    globalStop: true,
+    recentPublishedAt: [new Date('2026-03-31T23:30:00Z')],
+  });
+  assert.equal(result.allowed === false && result.code, 'stopped');
 });
 
 test('24時間を過ぎた予約は期限切れ', () => {

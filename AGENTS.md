@@ -11,7 +11,20 @@
 
 - `README.md` … 環境構築、起動、停止と復旧
 - `HANDOFF.md` … 何が動いていて、何が未接続か
+- `tests/kit/DIFFERENCES.md` … 試作との差分（ここに無い不一致はバグ）
 - `src/domain/` … 業務ルールはここに集約されている
+
+## キット由来のもの
+
+`src/domain/policy.mjs` と `tests/kit/policy.test.mjs` はキット収録。
+**policy.mjs を改変しない。** 同じ規則をアプリ側(`src/domain/*.ts`)でも
+実装しているので、変更したら `tests/kit/cross-check.test.ts` を通すこと。
+
+`reference/` は試作GAS。参考用で、**新システムのcronと並行稼働させない。**
+
+`content/` は本人提供の素材。**人の実体験として使えるのは
+`operator-facts.json` の3件だけ。** 顧客情報・未承認の実績・架空の効果
+数値を生成・公開しない。
 
 ## コードの置き場所
 

@@ -1,21 +1,31 @@
 {
-  "_note": "現行の販売案。価格の変更と公開は必ず管理者の手動操作で行う（自動化しない）。",
+  "_note": "現行の販売案。価格の変更と公開は必ず管理者の手動操作で行う（自動化しない）。価格は初期案で、公開前に販売者が最終確認する。",
   "products": [
     {
       "code": "starter",
-      "name": "Starter（3本）",
+      "name": "Starter Pack（プロンプト3本セット）",
       "priceYen": 1980,
       "noteUrl": null,
-      "composition": ["意図整理", "デザイン具体化", "品質判断"],
+      "composition": [
+        "新規LP制作",
+        "デザイン・レスポンシブ改善",
+        "Vercel公開準備"
+      ],
       "isPublished": false
     },
     {
       "code": "bundle10",
-      "name": "全10本",
+      "name": "全10本セット",
       "priceYen": 9800,
       "noteUrl": null,
-      "composition": ["Starterの3本を含む", "残り7本"],
+      "composition": [
+        "Starterの3本を含む",
+        "用途別プロンプト7本",
+        "意図整理・参考分析・品質判断の共通の使い方"
+      ],
       "isPublished": false
     }
-  ]
+  ],
+  "salesPageUrl": "https://anyware-ai-web-kit.info22631.chatgpt.site",
+  "_salesPageNote": "既存の販売ページ。ダッシュボードとは別物。CTAのURLとして許可される。"
 }

@@ -5,6 +5,7 @@ import type { KnowledgeItem, KnowledgeKind, KnowledgeState } from '../domain/kno
 export type KnowledgeRow = {
   id: string;
   owner_id: string;
+  source_key: string | null;
   kind: KnowledgeKind;
   state: KnowledgeState;
   title: string;
@@ -31,11 +32,22 @@ export async function knowledgeMap(ownerId: string): Promise<Map<string, Knowled
 
 export async function createKnowledge(
   ownerId: string,
-  input: { kind: KnowledgeKind; title: string; body: string; source: string },
+  input: {
+    kind: KnowledgeKind;
+    title: string;
+    body: string;
+    source: string;
+    /** 元データの識別子。同じ鍵で二度投入しない。 */
+    sourceKey?: string | null;
+    /** 本人が承認済みとして提供したものは APPROVED で入れる。 */
+    state?: KnowledgeState;
+  },
 ): Promise<KnowledgeRow> {
   const row = await queryOne<KnowledgeRow>(
-    `INSERT INTO knowledge (owner_id, kind, title, body, source) VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-    [ownerId, input.kind, input.title, input.body, input.source],
+    `INSERT INTO knowledge (owner_id, kind, title, body, source, source_key, state)
+     VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, 'DRAFT'))
+     RETURNING *`,
+    [ownerId, input.kind, input.title, input.body, input.source, input.sourceKey ?? null, input.state ?? null],
   );
   await recordAudit({
     ownerId, actor: 'owner', action: 'knowledge.create', targetType: 'knowledge', targetId: row!.id,

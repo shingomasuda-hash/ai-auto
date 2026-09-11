@@ -180,11 +180,23 @@ export function extractJson(text: string): string {
   return trimmed;
 }
 
+/**
+ * CTAに使ってよいURLの一覧。
+ * 登録済みのものだけを許し、生成側が新しいURLを作れないようにする。
+ */
 async function listAllowedCtaUrls(ownerId: string): Promise<string[]> {
   const { query } = await import('../db/pool.ts');
-  const rows = await query<{ note_url: string | null }>(
+  const products = await query<{ note_url: string | null }>(
     `SELECT note_url FROM products WHERE owner_id = $1 AND note_url IS NOT NULL`,
     [ownerId],
   );
-  return rows.map((row) => row.note_url!).filter(Boolean);
+  const settingsRows = await query<{ sales_page_url: string | null; free_material_url: string | null }>(
+    `SELECT sales_page_url, free_material_url FROM settings WHERE owner_id = $1`,
+    [ownerId],
+  );
+  return [
+    ...products.map((row) => row.note_url),
+    settingsRows[0]?.sales_page_url ?? null,
+    settingsRows[0]?.free_material_url ?? null,
+  ].filter((url): url is string => typeof url === 'string' && url.trim() !== '');
 }

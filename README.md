@@ -60,13 +60,23 @@ npm run seed
 npm run import:posts
 ```
 
-- `content/products.json` … 販売案（Starter 1,980円 / 全10本 9,800円）。
-  全10本にはStarterの3本が含まれる。価格の変更と公開は手動操作のみ。
-- `content/operator-facts.json` … **本人が提供した知識だけ**を置く。
-  初期状態は空。使ったAI名の組合せ・時間削減・受注数・売上改善・顧客名は
-  補完しない。空欄を推測で埋めない。
-- `content/posts-seed.json` … 既存投稿の投入元。初期状態は空。
-  `importKey` で冪等に投入され、日時は入らない（勝手に公開・予約しない）。
+投入されるもの（すべてキット収録の実データ）:
+
+| ファイル | 内容 |
+| --- | --- |
+| `content/products.json` | 販売案（Starter 1,980円 / 全10本 9,800円）と販売ページURL |
+| `content/operator-facts.json` | **本人の経験3件。** 使えるのはこの3件だけ |
+| `content/threads-90-posts.json` | 既存のThreads投稿90件 |
+| `content/email-sequence.json` | 配信メール5通（Phase 4で使う） |
+| `content/note-sales-copy.txt` | 販売原稿・プロフィール・固定投稿 |
+| `content/cheat-sheet.txt` | 無料配布のチェックシート |
+
+- 90投稿は**すべて DRAFT** で入る。元データの `day`/`time` は
+  `suggested_slot` に目安として残すだけで、**予約日時にはしない**。
+  承認もしない。X向けの文面は含まれない（別の下書きとして用意する）。
+- 知識は `approved: true` のものだけ APPROVED で入る。
+  **使ったAI名の組合せ・時間削減・受注数・売上改善・顧客名は補完しない。**
+- どちらも元データのIDで冪等。何度実行しても増えない。
 
 ## 起動
 
@@ -99,6 +109,11 @@ TEST_DATABASE_URL=postgres://user:pass@localhost:5432/aiauto_test
 
 HTTP経路の認証テスト（`tests/db/api-auth.test.ts`）は本番ビルドを起動して
 実際にリクエストする。`npm run build` を先に実行していないとスキップされる。
+
+`src/domain/policy.mjs` はキット収録の純粋関数で、**改変していない**。
+`tests/kit/policy.test.mjs` の12件はそのまま通る。同じ規則をアプリ側でも
+実装しているため、`tests/kit/cross-check.test.ts` で両者の判断が一致する
+ことを確かめている。意図的な差分は `tests/kit/DIFFERENCES.md` に記録する。
 
 ## ワーカーと cron
 
@@ -227,6 +242,7 @@ UPDATE settings SET global_stop = true WHERE owner_id = '<所有者ID>';
 
 ```
 db/migrations/     スキーマ
+reference/         試作GAS（参考用。新システムのcronと並行稼働させない）
 scripts/           migrate / seed / import-posts / admin / account / worker
 src/domain/        純粋関数（DB・ネットワークに依存しない）
 src/db/            リポジトリ層（すべて所有者スコープ）
@@ -236,5 +252,6 @@ src/ai/            料金計算とAnthropic API呼出し
 src/app/           画面とAPI
 tests/domain/      DB不要のテスト
 tests/db/          DBが必要なテスト
+tests/kit/         キット収録の純粋関数テストと、実装との突き合わせ
 content/           商品・知識・既存投稿の投入元
 ```

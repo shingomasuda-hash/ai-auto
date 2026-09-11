@@ -2,16 +2,42 @@
 
 最終更新: Phase 3 まで実装。Phase 4（メール・無料資料・実投稿）は未着手。
 
-## 前提の訂正
+## キットの所在について（訂正）
 
-指示にあった「最初に読むもの」（START_HERE.md / AGENTS.md /
-PROJECT_CONTEXT.md / 既存の package.json / `src/domain/policy.mjs` /
-content の各JSON / reference/Code.gs）は、**このリポジトリに存在しなかった**。
-リポジトリはコミット0件の空の状態だった。
+初回の作業時、キットはリポジトリにもローカルにも無く、「存在しない」と
+報告した。**これは探し方が足りなかった。** キットはGoogle Driveの
+共有フォルダにあった。
 
-そのため、キットを引き継ぐのではなく、指示書の内容から実装を起こした。
-`content/` の各JSONは、本人が提供する内容を受け取るための**空の器**として
-作成してある。中身は推測で埋めていない。
+- フォルダ: https://drive.google.com/drive/folders/1Xa7pKkxSvtNCVWqqc9NknMgnEDp44mxi
+- `AI発信自動化_ClaudeCode開発キット.zip`
+
+現在はキット一式を取り込み済み。
+
+| キットのファイル | 取り込み先 |
+| --- | --- |
+| `src/domain/policy.mjs` | 同じ場所（**未改変**） |
+| `tests/policy.test.mjs` | `tests/kit/policy.test.mjs`（import先のみ調整） |
+| `content/operator-facts.json` | 同じ場所。本人の経験3件 |
+| `content/threads-90-posts.json` | 同じ場所。90件 |
+| `content/email-sequence.json` | 同じ場所。5通 |
+| `content/note-sales-copy.txt`, `cheat-sheet.txt` | 同じ場所 |
+| `content/prompt-library.zip`, `starter-pack.zip` | 同じ場所 |
+| `reference/Code.gs` ほか | 同じ場所。試作GAS（参考用） |
+| `CLAUDE_CODE_PROMPT.md` | `reference/CLAUDE_CODE_PROMPT.original.md` |
+
+`npm test` はキットの12件を含めて実行する。`policy.mjs` は改変していない。
+
+### 試作との突き合わせで見つかった実装の誤り
+
+`src/domain/policy.mjs` とアプリ実装を突き合わせ（`tests/kit/cross-check.test.ts`）、
+**アプリ側の誤りを2件見つけて直した。** 詳細は `tests/kit/DIFFERENCES.md`。
+
+1. **上限を暦日で数えていた。** JSTの暦日で「1日3件」としていたため、
+   23:00に3件・翌00:30に3件が通り、実質2時間半で6件になりえた。
+   試作と同じ**直近24時間の移動窓**へ変更した。
+2. **送信直前に上限を見ていなかった。** 予約時にしか数えておらず、
+   予約の遅延や後から公開された投稿で前提が崩れていた。
+   送信直前に**実際に公開された時刻**で数え直すようにした。
 
 ## 完成した操作
 
@@ -123,22 +149,21 @@ PostgreSQL（Neonなどの候補）、メール配信サービス、独自ドメ
 2. **`TOKEN_ENCRYPTION_KEY` を生成**して設定する
    （`node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`）
 3. **所有者アカウントを作る**（`npm run admin:create -- <email>`）
-4. **`content/operator-facts.json` に本人の知識を記入する**
-   - 一般ノウハウと本人の経験を分けて書く
-   - 使ったAI名の組合せ、時間削減、受注数、売上改善、顧客名は、
-     **本人が実際に提供できるものだけ**書く。書けないものは空のままでよい
-5. **`content/posts-seed.json` に既存の投稿を入れる**（あれば）
-   - 指示書にあった「既存90投稿」は受け取っていない
-6. **AIの単価と為替を確認して設定する**（設定するまで有料処理は動かない）
-7. **ホスティング・DB・メールの料金を確認して構成を決める**
-8. **ThreadsとXの開発者アカウントで認可を取得する**（申請が必要）
-9. 認可が取れたら `npm run account:connect -- <platform> live <user_id>`
-10. **設定画面で停止フラグを解除する**（解除するまで送信されない）
+4. **AIの単価と為替を確認して設定する**（設定するまで有料処理は動かない）
+5. **ホスティング・DB・メールの料金を確認して構成を決める**
+6. **ThreadsとXの開発者アカウントで認可を取得する**（申請が必要）
+7. 認可が取れたら `npm run account:connect -- <platform> live <user_id>`
+8. **設定画面で停止フラグを解除する**（解除するまで送信されない）
+9. **noteの商品URLを登録する**（公開後。CTAの許可先になる）
+10. **X向けの文面を用意する**（90投稿はThreads向け。Xは別の下書き）
+
+知識と既存投稿はキットから取り込み済みなので、記入作業は不要。
+知識を増やす場合は `content/operator-facts.json` に本人が提供できる
+ものだけ追記する。**本人の経験として使えるのは現在の3件だけ。**
 
 ## 次の段階
 
-1. **本人の知識を入れる**（4）。これが無いと生成も投稿も中身が作れない。
-2. **料金を確認して構成を確定する**（6, 7）。ここが決まるまで有料処理は
+1. **料金を確認して構成を確定する**（4, 5）。ここが決まるまで有料処理は
    止まったままで安全。
 3. **模擬接続で通しの動作を確認する**
    （`npm run account:connect -- threads simulated` → 承認 → 予約 →

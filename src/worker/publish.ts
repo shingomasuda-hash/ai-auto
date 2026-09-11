@@ -18,7 +18,7 @@ import { claimJob, finishJob, releaseJob, enqueueJob } from '../db/jobs.ts';
 import type { Job } from '../db/jobs.ts';
 import { recordAudit } from '../db/audit.ts';
 import { getStopFlags } from '../db/settings.ts';
-import { evaluateSendGate, isExpired } from '../domain/policy.ts';
+import { POLICY, evaluateSendGate, isExpired } from '../domain/policy.ts';
 import type { Platform } from '../domain/text-length.ts';
 import type { PublishAdapter } from '../adapters/types.ts';
 import { createSimulatedAdapter } from '../adapters/simulated.ts';
@@ -101,9 +101,11 @@ export async function processOnePublishJob(options: WorkerOptions): Promise<Proc
   const variant = claimed.variant;
 
   // --- 3. 送信直前の確認 ---
-  const [{ globalStop, platformStop }, { adapter, mode }] = await Promise.all([
+  const [{ globalStop, platformStop }, { adapter, mode }, recentPublishedAt] = await Promise.all([
     getStopFlags(variant.owner_id, variant.platform),
     adapterFactory(variant.owner_id, variant.platform),
+    // 予約時の検査は当時の前提にすぎない。実際に公開された時刻で数え直す。
+    loadRecentPublishedAt(variant.owner_id, variant.platform, variant.id, now()),
   ]);
 
   const gate = evaluateSendGate({
@@ -114,6 +116,7 @@ export async function processOnePublishJob(options: WorkerOptions): Promise<Proc
     globalStop,
     platformStop,
     connectionMode: mode,
+    recentPublishedAt,
   });
 
   if (!gate.allowed) {
@@ -122,9 +125,10 @@ export async function processOnePublishJob(options: WorkerOptions): Promise<Proc
       await finishJob(job.id, 'CANCELLED', gate.message);
       return { kind: 'skipped', variantId: variant.id, reason: gate.code };
     }
-    // 停止・未接続・不正な本文は、まだ何も送っていないので予約へ戻す。
+    // 停止・未接続・上限超過は、まだ何も送っていないので予約へ戻す。
+    // 上限に当たった場合は、窓が空く時刻まで待ってから再試行する。
     await setVariantState(variant.id, 'SCHEDULED', { last_error: gate.message });
-    await releaseJob(job.id, new Date(now().getTime() + 60_000));
+    await releaseJob(job.id, gate.retryAt ?? new Date(now().getTime() + 60_000));
     await recordAudit({
       ownerId: variant.owner_id, actor: 'worker', action: 'publish.blocked',
       targetType: 'post_variant', targetId: variant.id, detail: { code: gate.code },
@@ -386,4 +390,27 @@ export async function processOneReconcileJob(options: WorkerOptions): Promise<Pr
     targetType: 'post_variant', targetId: variant.id,
   });
   return { kind: 'failed', variantId: variant.id, errorCode: 'not_found' };
+}
+
+/**
+ * 同一媒体で実際に公開された時刻を、上限の判定に必要な範囲だけ読む。
+ * 自分自身は除く。
+ */
+async function loadRecentPublishedAt(
+  ownerId: string,
+  platform: Platform,
+  excludeVariantId: string,
+  now: Date,
+): Promise<Date[]> {
+  const since = new Date(now.getTime() - POLICY.rateWindowMs);
+  const { rows } = await getPool().query<{ published_at: Date }>(
+    `SELECT published_at
+       FROM post_variants
+      WHERE owner_id = $1 AND platform = $2 AND id <> $3
+        AND state = 'PUBLISHED' AND published_at IS NOT NULL
+        AND published_at >= $4
+      ORDER BY published_at DESC`,
+    [ownerId, platform, excludeVariantId, since],
+  );
+  return rows.map((row) => row.published_at);
 }

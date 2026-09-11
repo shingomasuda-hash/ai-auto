@@ -15,6 +15,8 @@ export type SettingsRow = {
   monthly_goal_yen: number;
   email_test_mode: boolean;
   allowed_test_recipients: string[];
+  sales_page_url: string | null;
+  free_material_url: string | null;
 };
 
 export type AccountRow = {
@@ -44,6 +46,7 @@ const UPDATABLE = [
   'global_stop', 'threads_stop', 'x_stop', 'email_stop',
   'ai_generation_enabled', 'auto_approve_enabled', 'ai_model',
   'monthly_budget_yen', 'monthly_goal_yen', 'email_test_mode', 'allowed_test_recipients',
+  'sales_page_url', 'free_material_url',
 ] as const;
 
 export async function updateSettings(
