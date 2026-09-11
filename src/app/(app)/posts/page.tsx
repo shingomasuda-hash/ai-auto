@@ -66,8 +66,9 @@ export default async function PostsPage({
                   <tr key={variant.id}>
                     <td><PlatformLabel platform={variant.platform} /></td>
                     <td>
-                      <div className="body-preview">
-                        {variant.body.length > 90 ? `${variant.body.slice(0, 90)}…` : variant.body}
+                      {/* 一覧では改行をつぶして1行で見せる。全文は詳細画面で読む。 */}
+                      <div className="body-preview" title={variant.body}>
+                        {preview(variant.body)}
                       </div>
                     </td>
                     <td className="small">{CATEGORY_LABELS[variant.category] ?? variant.category}</td>
@@ -85,6 +86,13 @@ export default async function PostsPage({
       </div>
     </>
   );
+}
+
+/** 一覧用の要約。改行と連続空白をつめて1行にする。 */
+function preview(body: string, max = 78): string {
+  const flat = body.replace(/\s+/gu, ' ').trim();
+  const chars = Array.from(flat);
+  return chars.length <= max ? flat : `${chars.slice(0, max).join('')}…`;
 }
 
 function FilterLink({ href, label, active }: { href: string; label: string; active: boolean }) {
