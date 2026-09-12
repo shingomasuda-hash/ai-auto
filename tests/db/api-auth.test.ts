@@ -214,3 +214,47 @@ test('他人のデータは所有者スコープで見えない', options, async
   const { getVariant } = await import('../../src/db/posts.ts');
   assert.equal((await getVariant(ownerId, variantId))?.state, 'DRAFT', '元の投稿は変わっていない');
 });
+
+test('所有者がいるうちは、健全性の詳細を未ログインへ返さない', options, async () => {
+  const response = await fetch(`${BASE}/api/health`);
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  // 所有者が存在するので、詳細は隠して { ok: true } だけ返す
+  assert.deepEqual(body, { ok: true });
+  assert.equal('env' in body, false);
+  assert.equal('databaseReachable' in body, false);
+});
+
+test('ログイン後は健全性の詳細が見え、値は含まれない', options, async () => {
+  const login = await fetch(`${BASE}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ email: ownerEmail, password: PASSWORD }),
+  });
+  const cookie = login.headers.getSetCookie().find((c) => c.startsWith('aiops_session='))!.split(';')[0];
+
+  const response = await fetch(`${BASE}/api/health`, { headers: { cookie } });
+  const body = await response.json();
+  assert.equal(body.databaseReachable, true);
+  assert.ok(body.migrationsApplied > 0);
+  assert.equal(body.ownerExists, true);
+  assert.equal(body.setupComplete, true);
+
+  // env は「設定の有無」だけで、値は入っていない
+  assert.equal(typeof body.env.DATABASE_URL, 'boolean');
+  assert.equal(body.env.DATABASE_URL, true);
+  const serialized = JSON.stringify(body);
+  assert.doesNotMatch(serialized, /postgres:\/\//, '接続文字列が漏れている');
+  assert.doesNotMatch(serialized, /aiauto/, 'DB名やユーザー名が漏れている');
+});
+
+test('所有者がいる状態では、未知のユーザーでも設定の問題として扱わない', options, async () => {
+  const response = await fetch(`${BASE}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ email: 'nobody@example.test', password: 'whatever-123456' }),
+  });
+  assert.equal(response.status, 401);
+  const body = await response.json();
+  assert.equal(body.setupIssue, undefined, '所有者がいるのに設定の問題として返している');
+});

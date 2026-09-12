@@ -130,6 +130,18 @@ PostgreSQL（Neonなどの候補）、メール配信サービス、独自ドメ
 コードは特定のホスティングに依存していない（`DATABASE_URL` と
 `worker:once` を呼べる cron があれば動く）ので、料金を確認してから選べる。
 
+### デプロイ先での未対応
+
+Vercel などのサーバーレス環境へ置いた場合、**ワーカーが動かない。**
+常駐プロセスを置けず、cron から叩けるHTTPの入口も未実装。
+
+影響するのは投稿の送信・指標の取得・期限切れの処理・照合。
+下書きの作成/編集/承認/予約、売上の入力、各画面の表示は動く。
+（送信は初期状態で停止しているので、動かなくても実害は出ていない）
+
+対応するには `POST /api/cron/tick` を作り、`CRON_SECRET` で認可して
+`tick()` を呼ぶ。`vercel.json` の crons から5分おきに叩く。
+
 ### 未実装（Phase 4）
 
 - メールの登録・確認・解除の画面とAPI（**ドメインのロジックとテストは
@@ -156,6 +168,19 @@ PostgreSQL（Neonなどの候補）、メール配信サービス、独自ドメ
 8. **設定画面で停止フラグを解除する**（解除するまで送信されない）
 9. **noteの商品URLを登録する**（公開後。CTAの許可先になる）
 10. **X向けの文面を用意する**（90投稿はThreads向け。Xは別の下書き）
+
+デプロイ先の初期設定（Vercel 等）:
+
+```bash
+export DATABASE_URL='<本番の接続文字列>'
+export DATABASE_SSL=require
+export TOKEN_ENCRYPTION_KEY='<ホスティングと同じ値>'
+npm run migrate
+npm run admin:create -- you@example.com "あなたの名前"
+npm run seed && npm run import:posts
+```
+
+状態は `GET /api/health` で確認できる。
 
 知識と既存投稿はキットから取り込み済みなので、記入作業は不要。
 知識を増やす場合は `content/operator-facts.json` に本人が提供できる
