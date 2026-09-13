@@ -21,7 +21,8 @@
     "worker": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/worker.ts",
     "admin:create": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/create-admin.ts",
     "account:connect": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/connect-account.ts",
-    "worker:once": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/worker.ts --once"
+    "worker:once": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/worker.ts --once",
+    "admin:password": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/change-password.ts"
   },
   "dependencies": {
     "next": "^16.3.4",

@@ -41,6 +41,16 @@ cp .env.example .env.local   # 値を各自で設定する
 node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 ```
 
+## パスワードの変更
+
+```bash
+npm run admin:password -- you@example.com
+```
+
+新しいパスワードを2回入力する（画面へは表示されない）。
+変更すると、**その所有者のログイン中のセッションはすべて無効**になる。
+漏れたパスワードで開いたままの画面を残さないため。
+
 ## マイグレーション
 
 ```bash
