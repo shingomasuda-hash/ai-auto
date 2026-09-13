@@ -15,13 +15,13 @@
     "test": "node --test --test-concurrency=1 --test-timeout=180000 \"tests/**/*.test.ts\"",
     "test:domain": "node --test \"tests/domain/**/*.test.ts\"",
     "test:db": "node --test --test-concurrency=1 --test-timeout=180000 \"tests/db/**/*.test.ts\"",
-    "migrate": "node --experimental-strip-types scripts/migrate.ts",
-    "seed": "node --experimental-strip-types scripts/seed.ts",
-    "import:posts": "node --experimental-strip-types scripts/import-posts.ts",
-    "worker": "node --experimental-strip-types scripts/worker.ts",
-    "admin:create": "node --experimental-strip-types scripts/create-admin.ts",
-    "account:connect": "node --experimental-strip-types scripts/connect-account.ts",
-    "worker:once": "node --experimental-strip-types scripts/worker.ts --once"
+    "migrate": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/migrate.ts",
+    "seed": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/seed.ts",
+    "import:posts": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/import-posts.ts",
+    "worker": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/worker.ts",
+    "admin:create": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/create-admin.ts",
+    "account:connect": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/connect-account.ts",
+    "worker:once": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/worker.ts --once"
   },
   "dependencies": {
     "next": "^16.3.4",

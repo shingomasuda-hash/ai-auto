@@ -25,6 +25,9 @@ npm install
 cp .env.example .env.local   # 値を各自で設定する
 ```
 
+管理コマンド（`migrate` / `seed` / `admin:create` など）は `.env.local` を
+自動で読む。無ければ環境変数をそのまま使う。
+
 `.env.example` は変数名だけを並べてある。最低限、次の2つが無いと起動できない。
 
 | 変数 | 用途 |
@@ -165,17 +168,24 @@ curl https://<あなたのURL>/api/health
 **管理コマンドはブラウザから実行できない。** マイグレーション・所有者
 作成・初期データ投入は、手元から本番DBへ向けて実行する。
 
-```bash
-# 手元のシェルで、本番DBを指す（値はシェルに入れるだけ。コミットしない）
-export DATABASE_URL='<直結の接続文字列>'   # 手元からは直結を使う
-export DATABASE_SSL=require
-export TOKEN_ENCRYPTION_KEY='<Vercelに設定したのと同じ値>'
+手元の `.env.local` に本番DBの値を書く。管理コマンドはこれを自動で読む
+（`.env.local` は `.gitignore` 済み。コミットされない）。
 
+```
+DATABASE_URL=<直結の接続文字列>
+DATABASE_SSL=require
+TOKEN_ENCRYPTION_KEY=<Vercelに設定したのと同じ値>
+```
+
+```bash
 npm run migrate
 npm run admin:create -- you@example.com "あなたの名前"   # パスワードは対話入力
 npm run seed
 npm run import:posts
 ```
+
+秘密値をシェルの履歴に残したくないので、`export` ではなくファイルに置く。
+作業が終わったら `.env.local` を開発用の値に戻しておくとよい。
 
 `TOKEN_ENCRYPTION_KEY` は**手元とホスティングで同じ値**にする。
 違う値だと、保存済みの媒体トークンを復号できない。
