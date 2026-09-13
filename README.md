@@ -117,15 +117,59 @@ HTTP経路の認証テスト（`tests/db/api-auth.test.ts`）は本番ビルド�
 
 ## Vercel などへデプロイした場合
 
-ビルドとホスティングはそのまま動くが、**管理コマンドはブラウザから
-実行できない**。マイグレーション・所有者作成・初期データ投入は、手元から
-本番DBへ向けて実行する。
+### 1. データベースを用意する
+
+このアプリは PostgreSQL が必要。Vercel 自体はDBを含まないので別途用意する。
+
+Neon（サーバーレスPostgres）の無料枠は、2026年9月時点で
+**0.5GB ストレージ / 100 CU時間・月 / 5分アイドルでゼロにスケール**。
+このシステムのデータは数MB程度で、無料枠に収まる見込み。
+**契約前に現在の料金を必ず確認すること**（このリポジトリに単価は書かない）。
+
+接続文字列は2種類ある。用途で使い分ける。
+
+| 種類 | 使う場面 |
+| --- | --- |
+| **プール済み**（ホスト名に `-pooler` が入る） | Vercel の `DATABASE_URL` |
+| 直結 | 手元からの `migrate` / `seed` / `admin:create` |
+
+サーバーレスは関数の実例ごとに接続を張るため、プール済みを使わないと
+DB側の接続上限に当たる。`DATABASE_POOL_MAX` を未設定にしておくと、
+Vercel 上では自動で1接続になる。
+
+### 2. Vercel に環境変数を設定する
+
+Project → Settings → Environment Variables で設定する。
+
+| 変数 | 値 |
+| --- | --- |
+| `DATABASE_URL` | Neon の**プール済み**接続文字列 |
+| `DATABASE_SSL` | `require` |
+| `TOKEN_ENCRYPTION_KEY` | 下のコマンドで生成した値 |
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+```
+
+**環境変数を変えたら再デプロイする。** Vercel は既存のデプロイに
+反映しない。設定後 Deployments から Redeploy する。
+
+反映されたか確認する:
+
+```bash
+curl https://<あなたのURL>/api/health
+```
+
+### 3. 初期設定を実行する
+
+**管理コマンドはブラウザから実行できない。** マイグレーション・所有者
+作成・初期データ投入は、手元から本番DBへ向けて実行する。
 
 ```bash
 # 手元のシェルで、本番DBを指す（値はシェルに入れるだけ。コミットしない）
-export DATABASE_URL='<本番の接続文字列>'
-export DATABASE_SSL=require            # マネージドDBでは必要
-export TOKEN_ENCRYPTION_KEY='<32バイトのbase64>'
+export DATABASE_URL='<直結の接続文字列>'   # 手元からは直結を使う
+export DATABASE_SSL=require
+export TOKEN_ENCRYPTION_KEY='<Vercelに設定したのと同じ値>'
 
 npm run migrate
 npm run admin:create -- you@example.com "あなたの名前"   # パスワードは対話入力
@@ -135,6 +179,14 @@ npm run import:posts
 
 `TOKEN_ENCRYPTION_KEY` は**手元とホスティングで同じ値**にする。
 違う値だと、保存済みの媒体トークンを復号できない。
+
+### つまずきやすい点
+
+- 環境変数を設定しただけでは反映されない。**再デプロイが必要。**
+- `TOKEN_ENCRYPTION_KEY` が手元とVercelで違うと、保存済みの媒体トークンを
+  復号できない。同じ値にする。
+- Neon はアイドルでゼロにスケールするため、久しぶりの最初の1回だけ
+  接続に数秒かかることがある。
 
 ### 設定の状態を確認する
 
