@@ -22,8 +22,8 @@ async function main(): Promise<void> {
   let password: string;
   let confirm: string;
   try {
-    password = await prompter.ask('パスワード(12文字以上)');
-    confirm = await prompter.ask('もう一度');
+    password = await prompter.askSecret('パスワード(12文字以上)');
+    confirm = await prompter.askSecret('もう一度');
   } finally {
     prompter.close();
   }

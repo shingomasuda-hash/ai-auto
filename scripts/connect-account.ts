@@ -61,8 +61,8 @@ async function main(): Promise<void> {
     let accessToken: string;
     let refreshToken: string;
     try {
-      accessToken = await prompter.ask('アクセストークン');
-      refreshToken = await prompter.ask('リフレッシュトークン(なければ空)');
+      accessToken = await prompter.askSecret('アクセストークン');
+      refreshToken = await prompter.askSecret('リフレッシュトークン(なければ空)');
     } finally {
       prompter.close();
     }

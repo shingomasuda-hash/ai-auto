@@ -187,6 +187,19 @@ npm run import:posts
 秘密値をシェルの履歴に残したくないので、`export` ではなくファイルに置く。
 作業が終わったら `.env.local` を開発用の値に戻しておくとよい。
 
+**接続文字列を書くときの注意**: Neon の接続文字列には `&` が含まれる。
+シェルでは `&` が特別な意味を持つので、必ずシングルクォートで囲む。
+
+```bash
+echo 'DATABASE_URL=<接続文字列をそのまま貼る>' > .env.local
+echo 'DATABASE_SSL=require' >> .env.local
+cat .env.local   # 2行あることを確認する
+```
+
+`password authentication failed` が出る場合、接続文字列の
+`://ユーザー名:` と `@ホスト名` の間（パスワードの部分）が
+正しく入っているかを確認する。
+
 `TOKEN_ENCRYPTION_KEY` は**手元とホスティングで同じ値**にする。
 違う値だと、保存済みの媒体トークンを復号できない。
 
