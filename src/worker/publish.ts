@@ -5,9 +5,10 @@
  *   1. ジョブを原子的に claim する（期限付き）
  *   2. 投稿を CLAIMED にする
  *   3. 停止フラグ・期限・文字数を「送信直前に」もう一度確認する
- *   4. attempt を永続化する（外部へ送る前）
- *   5. PUBLISHING にしてから送信する
- *   6. 結果で PUBLISHED / FAILED / UNKNOWN へ分岐する
+ *   4. 送信枠を原子的に取る（同時実行でも上限を破らせない）
+ *   5. attempt を永続化する（外部へ送る前）
+ *   6. PUBLISHING にしてから送信する
+ *   7. 結果で PUBLISHED / FAILED / UNKNOWN へ分岐する
  *
  * UNKNOWN は再送しない。照合ジョブを積み、外部の公開状態と突き合わせる。
  */
@@ -18,6 +19,7 @@ import { claimJob, finishJob, releaseJob, enqueueJob } from '../db/jobs.ts';
 import type { Job } from '../db/jobs.ts';
 import { recordAudit } from '../db/audit.ts';
 import { getStopFlags } from '../db/settings.ts';
+import { reserveSendSlot } from '../db/send-slots.ts';
 import { POLICY, evaluateSendGate, isExpired } from '../domain/policy.ts';
 import type { Platform } from '../domain/text-length.ts';
 import type { PublishAdapter } from '../adapters/types.ts';
@@ -136,10 +138,26 @@ export async function processOnePublishJob(options: WorkerOptions): Promise<Proc
     return { kind: 'skipped', variantId: variant.id, reason: gate.code };
   }
 
-  // --- 4. attempt を永続化する（外部へ送る前） ---
+  // --- 4. 送信枠を原子的に取る ---
+  //
+  // 上の gate は「安いふるい」で、検査から送信までのあいだに別の
+  // ワーカーが割り込める。cron が重なると両方が通ってしまうので、
+  // ここで枠を取り、取れなければ送らない。
+  const slot = await reserveSendSlot(variant.owner_id, variant.platform, variant.id, now());
+  if (!slot.ok) {
+    await setVariantState(variant.id, 'SCHEDULED', { last_error: slot.message });
+    await releaseJob(job.id, slot.retryAt);
+    await recordAudit({
+      ownerId: variant.owner_id, actor: 'worker', action: 'publish.rate_limited',
+      targetType: 'post_variant', targetId: variant.id, detail: { code: slot.code },
+    });
+    return { kind: 'skipped', variantId: variant.id, reason: slot.code };
+  }
+
+  // --- 5. attempt を永続化する（外部へ送る前） ---
   const attempt = await createAttempt(variant.id, variant.owner_id);
 
-  // --- 5. PUBLISHING にしてから送信する ---
+  // --- 6. PUBLISHING にしてから送信する ---
   await setVariantState(variant.id, 'PUBLISHING');
 
   const controller = new AbortController();
@@ -166,7 +184,7 @@ export async function processOnePublishJob(options: WorkerOptions): Promise<Proc
     options.signal?.removeEventListener('abort', onAbort);
   }
 
-  // --- 6. 結果で分岐する ---
+  // --- 7. 結果で分岐する ---
   if (outcome.outcome === 'PUBLISHED') {
     await finishAttempt(attempt.id, 'PUBLISHED', { externalPostId: outcome.externalPostId, sentToProvider: true });
     await setVariantState(variant.id, 'PUBLISHED', {

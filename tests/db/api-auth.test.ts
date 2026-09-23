@@ -22,18 +22,49 @@ const options = {
       : false,
 };
 
-const PORT = 3987;
-const BASE = `http://127.0.0.1:${PORT}`;
+/**
+ * ポートは毎回空いているものを取る。
+ * 固定にすると、前の実行が残したサーバーがポートを握ったままのとき
+ * そちらに接続してしまい、検証したつもりで何も検証できていない
+ * 状態になる（古いビルドを相手に通ってしまう）。
+ */
+let PORT = 0;
+let BASE = '';
+
+async function findFreePort(): Promise<number> {
+  const net = await import('node:net');
+  return new Promise((resolve, reject) => {
+    const probe = net.createServer();
+    probe.unref();
+    probe.on('error', reject);
+    probe.listen(0, '127.0.0.1', () => {
+      const address = probe.address();
+      const port = typeof address === 'object' && address ? address.port : 0;
+      probe.close(() => resolve(port));
+    });
+  });
+}
 const PASSWORD = 'test-password-123456';
+const CRON_SECRET = 'cron-secret-for-tests-0123456789';
 
 let server: ChildProcess | null = null;
 let ownerEmail = '';
 let ownerId = '';
 let variantId = '';
 
+let serverExited: string | null = null;
+
+/**
+ * サーバーが起動するまで待つ。
+ *
+ * 子プロセスが落ちたら必ずエラーにする。待ち続けるだけだと、
+ * ポートを握っている**別のサーバー**に接続してしまい、
+ * 検証したつもりで何も検証できていない状態になる。
+ */
 async function waitForServer(timeoutMs = 60_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
+    if (serverExited !== null) throw new Error(serverExited);
     try {
       const response = await fetch(`${BASE}/login`, { redirect: 'manual' });
       if (response.status < 500) return;
@@ -52,6 +83,9 @@ before(async () => {
   ownerEmail = owner.email;
   ownerId = owner.id;
 
+  PORT = await findFreePort();
+  BASE = `http://127.0.0.1:${PORT}`;
+
   const post = await createPost({
     ownerId,
     title: '認証テスト用',
@@ -62,20 +96,37 @@ before(async () => {
   });
   variantId = post.ok ? post.variants[0].id : '';
 
-  server = spawn('npx', ['next', 'start', '-p', String(PORT)], {
+  // npx を挟まずローカルの実行ファイルを直接使う。
+  // npx は状況によって標準入力を待つことがあり、stdio:'ignore' だと止まる。
+  server = spawn('node_modules/.bin/next', ['start', '-p', String(PORT)], {
     env: {
       ...process.env,
       DATABASE_URL: TEST_DATABASE_URL,
       NODE_ENV: 'production',
       TOKEN_ENCRYPTION_KEY: Buffer.alloc(32, 7).toString('base64'),
+      CRON_SECRET: CRON_SECRET,
     },
+    // 標準出力をパイプで受けるとテストプロセスが終われなくなるので受けない。
     stdio: 'ignore',
   });
+
+  server.on('exit', (code) => {
+    serverExited = `テスト用サーバーが終了しました (code=${code})。`
+      + ` ポート ${PORT} で起動できませんでした。`;
+  });
+
   await waitForServer();
 });
 
 after(async () => {
-  server?.kill('SIGTERM');
+  if (server && server.exitCode === null) {
+    const exited = new Promise((resolve) => server!.once('exit', resolve));
+    server.kill('SIGTERM');
+    // 終わらなければ強制的に落とす。テストを終われなくしない。
+    const timer = setTimeout(() => server?.kill('SIGKILL'), 3000);
+    await exited;
+    clearTimeout(timer);
+  }
   if (dbAvailable && built) await teardownDb();
 });
 
@@ -257,4 +308,57 @@ test('所有者がいる状態では、未知のユーザーでも設定の問�
   assert.equal(response.status, 401);
   const body = await response.json();
   assert.equal(body.setupIssue, undefined, '所有者がいるのに設定の問題として返している');
+});
+
+test('cronの入口は秘密なしでは動かない', options, async () => {
+  const cases: Record<string, string>[] = [
+    {},
+    { 'x-cron-secret': 'wrong-secret-but-long-enough' },
+    { authorization: 'Bearer wrong-secret-but-long-enough' },
+  ];
+  for (const headers of cases) {
+    const response = await fetch(`${BASE}/api/cron/tick`, { method: 'POST', headers });
+    assert.equal(response.status, 401, `${JSON.stringify(headers)} が通ってしまう`);
+  }
+});
+
+test('cronの入口はログイン中の所有者でも秘密なしでは動かない', options, async () => {
+  const login = await fetch(`${BASE}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ email: ownerEmail, password: PASSWORD }),
+  });
+  const cookie = login.headers.getSetCookie().find((c) => c.startsWith('aiops_session='))!.split(';')[0];
+  const response = await fetch(`${BASE}/api/cron/tick`, { method: 'POST', headers: { cookie } });
+  assert.equal(response.status, 401, 'セッションで cron が叩けてしまう');
+});
+
+test('正しい秘密なら処理して結果を返す', options, async () => {
+  // Vercel 形式
+  const bearer = await fetch(`${BASE}/api/cron/tick`, {
+    method: 'GET',
+    headers: { authorization: `Bearer ${CRON_SECRET}` },
+  });
+  assert.equal(bearer.status, 200);
+  const body = await bearer.json();
+  assert.equal(body.ok, true);
+  assert.equal(typeof body.summary.processed, 'number');
+  assert.equal(typeof body.summary.budgetExhausted, 'boolean');
+  assert.equal(Array.isArray(body.summary.expired), true);
+
+  // 外部サービス向けのヘッダ
+  const custom = await fetch(`${BASE}/api/cron/tick`, {
+    method: 'POST',
+    headers: { 'x-cron-secret': CRON_SECRET },
+  });
+  assert.equal(custom.status, 200);
+});
+
+test('cronの応答に秘密や接続情報が含まれない', options, async () => {
+  const response = await fetch(`${BASE}/api/cron/tick`, {
+    method: 'POST', headers: { 'x-cron-secret': CRON_SECRET },
+  });
+  const text = await response.text();
+  assert.doesNotMatch(text, new RegExp(CRON_SECRET), 'CRON_SECRET が応答に出ている');
+  assert.doesNotMatch(text, /postgres:\/\//, '接続文字列が応答に出ている');
 });

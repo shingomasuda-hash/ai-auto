@@ -10,10 +10,7 @@
  */
 import path from 'node:path';
 import { closePool } from '../src/db/pool.ts';
-import { processOnePublishJob, processOneReconcileJob } from '../src/worker/publish.ts';
-import { processOneMetricsJob } from '../src/worker/metrics.ts';
-import { sweepExpiredClaims } from '../src/db/jobs.ts';
-import { expireOverdue } from '../src/db/posts.ts';
+import { runTick, defaultTickOptions, didWork } from '../src/worker/tick.ts';
 import { purgeExpiredSessions } from '../src/db/auth.ts';
 
 const WORKER_ID = process.env.WORKER_ID ?? `worker-${process.pid}`;
@@ -29,42 +26,16 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
 
 /** 1巡ぶんの処理。何か処理したら true。 */
 export async function tick(): Promise<boolean> {
-  let didWork = false;
-
-  // 期限切れの後片付けを先に行う。
-  await expireOverdue();
-  const swept = await sweepExpiredClaims();
-  if (swept.quarantined.length > 0) {
-    console.warn(`結果不明として隔離: ${swept.quarantined.map((q) => q.variantId).join(', ')}`);
-    didWork = true;
+  const summary = await runTick({
+    workerId: WORKER_ID,
+    signal: controller.signal,
+    ...defaultTickOptions(),
+    onEvent: (kind, detail) => console.log(`${kind}: ${JSON.stringify(detail)}`),
+  });
+  if (summary.budgetExhausted) {
+    console.log('上限に達したため途中で戻りました。残りは次の巡回で処理します。');
   }
-  if (swept.released.length > 0) didWork = true;
-
-  for (;;) {
-    const result = await processOnePublishJob({ workerId: WORKER_ID, signal: controller.signal });
-    if (result.kind === 'idle') break;
-    console.log(`publish: ${JSON.stringify(result)}`);
-    didWork = true;
-    if (controller.signal.aborted) break;
-  }
-
-  for (;;) {
-    const result = await processOneReconcileJob({ workerId: WORKER_ID, signal: controller.signal });
-    if (result.kind === 'idle') break;
-    console.log(`reconcile: ${JSON.stringify(result)}`);
-    didWork = true;
-    if (controller.signal.aborted) break;
-  }
-
-  for (;;) {
-    const result = await processOneMetricsJob({ workerId: WORKER_ID });
-    if (result.kind === 'idle') break;
-    console.log(`metrics: ${JSON.stringify(result)}`);
-    didWork = true;
-    if (controller.signal.aborted) break;
-  }
-
-  return didWork;
+  return didWork(summary);
 }
 
 async function main(): Promise<void> {
