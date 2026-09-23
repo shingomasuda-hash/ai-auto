@@ -1,13 +1,14 @@
 import { query, withTransaction } from './pool.ts';
 import { recordAudit } from './audit.ts';
-import type { SaleInput, DedupeResult } from '../domain/sales-import.ts';
-import { dedupeSales, parseSalesCsv, summarizeSales } from '../domain/sales-import.ts';
+import type { SaleInput, DedupeResult, SalesChannel } from '../domain/sales-import.ts';
+import { dedupeSales, parseSalesCsv, summarizeSales, summarizeByChannel } from '../domain/sales-import.ts';
 import { jstMonthRange } from '../domain/time.ts';
 
 export type SaleRow = {
   id: string;
   owner_id: string;
   external_order_id: string;
+  channel: SalesChannel;
   kind: 'SALE' | 'REFUND';
   product_code: string;
   gross_yen: number;
@@ -49,12 +50,13 @@ export async function insertSales(
     for (const sale of sales) {
       const { rows } = await client.query<SaleRow>(
         `INSERT INTO sales
-           (owner_id, external_order_id, kind, product_code, gross_yen, fee_yen, occurred_at, settled_on, note, source)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+           (owner_id, external_order_id, channel, kind, product_code, gross_yen, fee_yen,
+            occurred_at, settled_on, note, source)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
          ON CONFLICT (owner_id, external_order_id) DO NOTHING
          RETURNING *`,
         [
-          ownerId, sale.externalOrderId, sale.kind, sale.productCode, sale.grossYen,
+          ownerId, sale.externalOrderId, sale.channel, sale.kind, sale.productCode, sale.grossYen,
           sale.feeYen, sale.occurredAt, sale.settledOn, sale.note, source,
         ],
       );
@@ -72,8 +74,19 @@ export async function insertSales(
   });
 }
 
-export async function importSalesCsv(ownerId: string, csv: string): Promise<InsertSalesResult> {
-  const rows = parseSalesCsv(csv);
+/**
+ * CSVを取り込む。
+ *
+ * ココナラの売上CSVは毎回「全期間・全件」が落ちてくる。
+ * 注文IDの一意制約で既存分は弾かれるので、同じファイルを何度
+ * 取り込んでも増えない。これが取込の前提。
+ */
+export async function importSalesCsv(
+  ownerId: string,
+  csv: string,
+  channel: SalesChannel = 'note',
+): Promise<InsertSalesResult> {
+  const rows = parseSalesCsv(csv, channel);
   const existing = new Set(
     (await query<{ external_order_id: string }>(
       `SELECT external_order_id FROM sales WHERE owner_id = $1`, [ownerId],
@@ -90,11 +103,14 @@ export async function importSalesCsv(ownerId: string, csv: string): Promise<Inse
 
 export async function summarizeMonth(ownerId: string, monthKey: string) {
   const sales = await listSalesInMonth(ownerId, monthKey);
+  const rows = sales.map((s) => ({
+    channel: s.channel, kind: s.kind, grossYen: s.gross_yen, feeYen: s.fee_yen,
+  }));
   return {
     sales,
-    summary: summarizeSales(
-      sales.map((s) => ({ kind: s.kind, grossYen: s.gross_yen, feeYen: s.fee_yen })),
-    ),
+    summary: summarizeSales(rows),
+    // 事業の軸が別なので、合計とは別に内訳も出す。
+    byChannel: summarizeByChannel(rows),
   };
 }
 

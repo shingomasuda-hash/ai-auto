@@ -12,9 +12,30 @@ import { parseCsvRecords } from './csv.ts';
 export const SALE_KINDS = ['SALE', 'REFUND'] as const;
 export type SaleKind = (typeof SALE_KINDS)[number];
 
+/**
+ * 販売チャネル。
+ *
+ * note は教材の売り切り、coconala は役務提供で、事業の軸が別。
+ * 集計は一つの画面で行うが、内訳は必ず分ける。
+ */
+export const SALES_CHANNELS = ['note', 'coconala', 'other'] as const;
+export type SalesChannel = (typeof SALES_CHANNELS)[number];
+
+export const CHANNEL_LABELS: Readonly<Record<SalesChannel, string>> = {
+  note: 'note',
+  coconala: 'ココナラ',
+  other: 'その他',
+};
+
+export function isSalesChannel(value: unknown): value is SalesChannel {
+  return typeof value === 'string' && (SALES_CHANNELS as readonly string[]).includes(value);
+}
+
 export type SaleInput = {
   /** 販売元(note等)が発行する注文ID。所有者スコープで一意。 */
   externalOrderId: string;
+  /** どのチャネルの売上か。取込時に指定する。 */
+  channel: SalesChannel;
   kind: SaleKind;
   /** 商品コード（products.code）。 */
   productCode: string;
@@ -33,15 +54,22 @@ export type ParsedRow =
   | { ok: true; line: number; value: SaleInput }
   | { ok: false; line: number; errors: string[]; raw: Record<string, string> };
 
+/**
+ * CSVの列名。販売元ごとに見出しが違うので別名を許す。
+ *
+ * ココナラは「売上管理・振込申請」から全期間の売上CSVを落とせる。
+ * 毎回全件が落ちてくるので、注文IDでの重複排除が効く前提の設計。
+ * 実際の見出しが合わない場合はここへ追記する。
+ */
 export const CSV_COLUMNS = {
-  externalOrderId: ['order_id', '注文ID', '注文番号'],
+  externalOrderId: ['order_id', '注文ID', '注文番号', '取引ID', '取引番号'],
   kind: ['kind', '区分'],
-  productCode: ['product_code', '商品コード'],
-  grossYen: ['gross_yen', '金額', '売上'],
-  feeYen: ['fee_yen', '手数料'],
-  occurredAt: ['occurred_at', '購入日時', '日時'],
-  settledOn: ['settled_on', '入金日'],
-  note: ['note', '備考'],
+  productCode: ['product_code', '商品コード', 'サービスID'],
+  grossYen: ['gross_yen', '金額', '売上', '販売金額', '売上金額'],
+  feeYen: ['fee_yen', '手数料', '販売手数料', 'システム利用料'],
+  occurredAt: ['occurred_at', '購入日時', '日時', '購入日', '取引日', '売上日'],
+  settledOn: ['settled_on', '入金日', '振込日'],
+  note: ['note', '備考', 'サービス名', 'メモ'],
 } as const;
 
 function pick(record: Record<string, string>, candidates: readonly string[]): string | undefined {
@@ -77,7 +105,7 @@ function parseDate(raw: string | undefined, label: string, errors: string[], req
   return parsed;
 }
 
-export function parseSalesCsv(csv: string): ParsedRow[] {
+export function parseSalesCsv(csv: string, channel: SalesChannel = 'note'): ParsedRow[] {
   const { records } = parseCsvRecords(csv);
   return records.map((record, index) => {
     const line = index + 2; // ヘッダ行を1行目とする
@@ -112,6 +140,7 @@ export function parseSalesCsv(csv: string): ParsedRow[] {
       line,
       value: {
         externalOrderId,
+        channel,
         kind: kind as SaleKind,
         productCode,
         grossYen,
@@ -170,6 +199,26 @@ export type SalesSummary = {
   saleCount: number;
   refundCount: number;
 };
+
+export type ChannelSummary = SalesSummary & { channel: SalesChannel };
+
+/**
+ * チャネルごとに集計する。実績のあるチャネルだけを返す。
+ * 手数料が1件でも未入力なら、そのチャネルの合計は確定しない。
+ */
+export function summarizeByChannel(
+  sales: readonly Pick<SaleInput, 'channel' | 'kind' | 'grossYen' | 'feeYen'>[],
+): ChannelSummary[] {
+  const byChannel = new Map<SalesChannel, Pick<SaleInput, 'kind' | 'grossYen' | 'feeYen'>[]>();
+  for (const sale of sales) {
+    const list = byChannel.get(sale.channel) ?? [];
+    list.push(sale);
+    byChannel.set(sale.channel, list);
+  }
+  return SALES_CHANNELS
+    .filter((channel) => byChannel.has(channel))
+    .map((channel) => ({ channel, ...summarizeSales(byChannel.get(channel)!) }));
+}
 
 export function summarizeSales(sales: readonly Pick<SaleInput, 'kind' | 'grossYen' | 'feeYen'>[]): SalesSummary {
   let grossSalesYen = 0;

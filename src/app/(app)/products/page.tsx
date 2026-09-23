@@ -3,6 +3,7 @@ import { listProducts } from '../../../db/products.ts';
 import { listSales, summarizeMonth } from '../../../db/sales.ts';
 import { formatYen } from '../../../domain/money.ts';
 import { formatJst, jstMonthKey } from '../../../domain/time.ts';
+import { CHANNEL_LABELS } from '../../../domain/sales-import.ts';
 import { PageHeader, Empty } from '../_ui.tsx';
 import SalesForms from './SalesForms.tsx';
 
@@ -20,7 +21,7 @@ export default async function ProductsPage() {
 
   return (
     <>
-      <PageHeader title="商品 / 売上" description="noteの販売商品と、手動入力・CSV取込による売上" />
+      <PageHeader title="商品 / 売上" description="チャネルごとの商品と、手動入力・CSV取込による売上" />
 
       <div className="card">
         <h2>商品</h2>
@@ -35,13 +36,19 @@ export default async function ProductsPage() {
             <table>
               <thead>
                 <tr>
-                  <th>コード</th><th>名称</th><th className="num">価格</th>
-                  <th>構成</th><th>noteリンク</th><th>公開</th>
+                  <th>チャネル</th><th>コード</th><th>名称</th><th className="num">価格</th>
+                  <th>構成</th><th>商品ページ</th><th>公開</th>
                 </tr>
               </thead>
               <tbody>
                 {products.map((product) => (
                   <tr key={product.id}>
+                    <td>
+                      <span className="badge">{CHANNEL_LABELS[product.channel]}</span>
+                      {product.kind === 'service' && (
+                        <span className="badge" style={{ marginLeft: 4 }}>役務</span>
+                      )}
+                    </td>
                     <td className="mono">{product.code}</td>
                     <td>{product.name}</td>
                     <td className="num">{formatYen(product.price_yen)}</td>
@@ -98,7 +105,44 @@ export default async function ProductsPage() {
         </div>
       </div>
 
-      <SalesForms products={products.map((p) => ({ code: p.code, name: p.name, priceYen: p.price_yen }))} />
+      {monthly.byChannel.length > 1 && (
+        <div className="card">
+          <h2>チャネル別の内訳<span className="sub">事業の軸が別なので合計とは分けて見る</span></h2>
+          <div className="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>チャネル</th><th className="num">売上</th><th className="num">返金</th>
+                  <th className="num">手数料</th><th className="num">件数</th>
+                </tr>
+              </thead>
+              <tbody>
+                {monthly.byChannel.map((row) => (
+                  <tr key={row.channel}>
+                    <td>{CHANNEL_LABELS[row.channel]}</td>
+                    <td className="num">{formatYen(row.grossSalesYen)}</td>
+                    <td className="num">
+                      {row.refundsYen === 0 ? <span className="muted">—</span> : formatYen(row.refundsYen)}
+                    </td>
+                    <td className="num">
+                      {row.feesYen === null
+                        ? <span className="muted">未確定</span>
+                        : formatYen(row.feesYen)}
+                    </td>
+                    <td className="num">{row.saleCount}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      <SalesForms
+        products={products.map((p) => ({
+          code: p.code, name: p.name, priceYen: p.price_yen, channel: p.channel,
+        }))}
+      />
 
       <div className="card">
         <h2>売上の明細</h2>
@@ -111,7 +155,7 @@ export default async function ProductsPage() {
             <table>
               <thead>
                 <tr>
-                  <th>注文ID</th><th>区分</th><th>商品</th>
+                  <th>チャネル</th><th>注文ID</th><th>区分</th><th>商品</th>
                   <th className="num">金額</th><th className="num">手数料</th>
                   <th>購入日時 (JST)</th><th>入金日</th><th>取込元</th>
                 </tr>
@@ -119,6 +163,7 @@ export default async function ProductsPage() {
               <tbody>
                 {sales.map((sale) => (
                   <tr key={sale.id}>
+                    <td><span className="badge">{CHANNEL_LABELS[sale.channel]}</span></td>
                     <td className="mono">{sale.external_order_id}</td>
                     <td>
                       <span className="badge">{sale.kind === 'REFUND' ? '返金' : '売上'}</span>

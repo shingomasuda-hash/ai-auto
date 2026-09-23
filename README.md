@@ -41,6 +41,21 @@ cp .env.example .env.local   # 値を各自で設定する
 node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 ```
 
+## 販売チャネル
+
+note（教材の売り切り）とココナラ（役務提供）を別チャネルとして扱う。
+**集計は一つの画面で行い、内訳は分ける。**
+
+- 商品には `channel`（note / coconala / other）と
+  `kind`（digital_product / service）を持たせる
+- 売上は取込時にチャネルを指定する。手動入力・CSV取込のどちらでも選べる
+- CSVの列名は日本語の別名を受け付ける（注文ID / 取引ID、金額 / 販売金額 など）
+- ココナラの「売上データ全件ダウンロード」のように毎回全期間が出力される
+  形式でも、注文IDの一意制約で二重計上しない
+
+**投稿のCTAに使えるのは `channel = 'note'` の商品だけ。** ココナラは
+外部への誘導を禁止しており、導線を混ぜると規約違反になりうるため。
+
 ## パスワードの変更
 
 ```bash

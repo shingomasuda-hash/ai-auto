@@ -186,8 +186,14 @@ export function extractJson(text: string): string {
  */
 async function listAllowedCtaUrls(ownerId: string): Promise<string[]> {
   const { query } = await import('../db/pool.ts');
+  // 投稿の導線に載せるのは note の商品だけ。
+  //
+  // ココナラは事業の軸が別で、かつココナラ側が外部への誘導を禁止している。
+  // 導線を混ぜると、どちらの反応を見ているのか分からなくなる。
+  // ココナラへ誘導したくなった場合は、ここを明示的に変えること。
   const products = await query<{ note_url: string | null }>(
-    `SELECT note_url FROM products WHERE owner_id = $1 AND note_url IS NOT NULL`,
+    `SELECT note_url FROM products
+      WHERE owner_id = $1 AND note_url IS NOT NULL AND channel = 'note'`,
     [ownerId],
   );
   const settingsRows = await query<{ sales_page_url: string | null; free_material_url: string | null }>(

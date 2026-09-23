@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { withOwner, readJson, str, int, badRequest } from '../../../lib/api.ts';
 import { insertSales } from '../../../db/sales.ts';
 import { parseJstLocalInput } from '../../../domain/time.ts';
+import { isSalesChannel } from '../../../domain/sales-import.ts';
+import type { SalesChannel } from '../../../domain/sales-import.ts';
 
 export const POST = withOwner(async (user, request) => {
   const payload = await readJson(request);
@@ -12,6 +14,9 @@ export const POST = withOwner(async (user, request) => {
 
   const kind = str(payload.kind, 'SALE');
   if (kind !== 'SALE' && kind !== 'REFUND') errors.push('区分が不正です。');
+
+  const channel = str(payload.channel, 'note');
+  if (!isSalesChannel(channel)) errors.push('販売チャネルが不正です。');
 
   const productCode = str(payload.productCode).trim();
   if (productCode === '') errors.push('商品を選んでください。');
@@ -46,6 +51,7 @@ export const POST = withOwner(async (user, request) => {
     user.id,
     [{
       externalOrderId,
+      channel: channel as SalesChannel,
       kind: kind as 'SALE' | 'REFUND',
       productCode,
       grossYen: grossYen!,
